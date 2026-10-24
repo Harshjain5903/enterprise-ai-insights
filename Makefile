@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: install test refresh full report report-offline evals cases
+.PHONY: install test refresh full report report-offline evals cases check tamper
 
 install:
 	python3 -m venv .venv && $(PY) -m pip install -e ".[dev]"
@@ -25,3 +25,9 @@ cases:
 
 evals:
 	$(PY) -m evals.run_evals
+
+check:
+	$(PY) -m insights.cli validate
+
+tamper:
+	-$(PY) -m insights.cli validate --tamper

@@ -27,7 +27,14 @@ def main(argv=None):
     rp.add_argument("--no-llm", action="store_true", help="skip gemini, template report only")
     rp.add_argument("--no-log", action="store_true", help="don't write to report_snapshot")
 
+    v = sub.add_parser("validate", help="re-run the validator on a saved report (no gcp needed)")
+    v.add_argument("report_dir", type=Path, nargs="?", help="out/<report_id>, default: latest")
+    v.add_argument("--tamper", action="store_true",
+                   help="change the first number in the headline first, to show it getting caught")
+
     args = p.parse_args(argv)
+    if args.cmd == "validate":
+        return _validate_saved(args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     # google libs are chatty at debug
@@ -69,6 +76,34 @@ def main(argv=None):
             print(f"  - {v}")
         print(f"written to {args.out / res.packet.report_id}")
         return 0 if res.status in ("approved", "fallback") else 2
+
+
+def _validate_saved(args):
+    import re
+    from .evidence import Packet
+    from .schema import Report
+    from .validator import validate
+
+    d = args.report_dir or max(Path("out").glob("*/report.json"), key=lambda f: f.stat().st_mtime).parent
+    packet = Packet.model_validate_json((d / "packet.json").read_text())
+    report = Report.model_validate_json((d / "report.json").read_text())
+    print(f"report: {d}")
+    if args.tamper:
+        m = re.search(r"\d+(?:\.\d+)?", report.headline)
+        if m:
+            fake = str(round(float(m.group(0)) * 1.5 + 1, 1))
+            report.headline = report.headline[:m.start()] + fake + report.headline[m.end():]
+            print(f"tampered headline: {m.group(0)} -> {fake}")
+    print(f"headline: {report.headline}")
+    res = validate(report, packet)
+    print(f"numbers checked: {res.numbers_checked}, matched facts: {res.numbers_ok}")
+    if res.ok:
+        print("PASS: every number traces back to a fact in the packet")
+        return 0
+    print("REJECTED:")
+    for viol in res.violations:
+        print(f"  - {viol}")
+    return 1
 
 
 class _NoLLM:
