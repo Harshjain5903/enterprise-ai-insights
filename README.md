@@ -23,8 +23,8 @@ thelook (public)  ──MERGE──>  raw  ──>  curated  ──>  mart  ─�
    AOV, refunds, a revenue decomposition (order count vs basket size), the
    4-week average, the top 3 category movers and per-channel spend. Every
    value becomes a typed fact with an id (`F_NET_SALES_CUR`, `F_CAT1_NET_CHANGE`, ...).
-3. **Narrative**: the packet goes to `gemini-2.5-flash` on Vertex AI
-   (temperature 0.2, JSON output against a pydantic schema). Every insight has
+3. **Narrative**: the packet goes to `gemini-2.5-flash`, through the Gemini
+   API or Vertex AI (temperature 0.2, JSON output against a pydantic schema). Every insight has
    to list the facts it uses.
 4. **Validation**: before anything gets published, `validator.py` checks that
    every number in the text matches a fact the insight cites (rounding is
@@ -66,16 +66,30 @@ to the model.
 
 ## Setup
 
-Needs a GCP project with billing, BigQuery and Vertex AI enabled.
+Runs entirely on free tiers: the BigQuery sandbox (no billing account) and
+the Gemini API free tier.
+
+1. Create a Google Cloud project and open BigQuery in the console once, that
+   turns on the sandbox. No billing needed.
+2. Get a Gemini API key at https://aistudio.google.com/apikey.
+3. Then:
 
 ```bash
 make install
-cp .env.example .env        # set GOOGLE_CLOUD_PROJECT
+cp .env.example .env        # GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY, CUSTOMER_SALT
 gcloud auth application-default login
+gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
 
 make full                   # first load: 365 days of history
 make report                 # report for the last complete week
 ```
+
+Sandbox limits worth knowing: no DML, so with `BQ_SANDBOX=1` every refresh
+rebuilds the tables from TheLook instead of merging a 7 day lookback (cheap
+at this size, well under the free 1 TB/month of queries), and sandbox tables
+expire after 60 days unless the refresh runs again. With billing on the
+project, set `BQ_SANDBOX=0` for the incremental MERGE path and
+`GEMINI_BACKEND=vertex` to call Gemini through Vertex AI instead.
 
 Reports land in `out/<report_id>/` as `report.md`, `report.html`,
 `report.json`, plus the `packet.json` that was sent and a `meta.json` with
@@ -84,7 +98,7 @@ timings, token counts, hashes and any validation failures.
 Other commands:
 
 ```bash
-insights refresh                    # daily incremental (7 day lookback)
+insights refresh                    # daily refresh
 insights dq                         # just the data quality checks
 insights report --week 2026-09-28   # specific week (must be a Monday)
 insights report --no-llm --no-log   # template report, no gemini call
@@ -98,7 +112,7 @@ to change it) so a bad query can't scan something huge.
 ```bash
 make test                                      # unit tests, no GCP needed
 python -m evals.run_evals --narrator fallback  # eval harness against the template
-python -m evals.run_evals                      # the real thing, calls gemini 100 times
+python -m evals.run_evals --delay 7            # the real thing, 100 gemini calls (~12 min on the free tier)
 ```
 
 `evals/cases.jsonl` has 100 generated cases (`evals/make_cases.py`, fixed
@@ -120,7 +134,9 @@ template version so the harness itself stays honest.
 ## Scheduling
 
 `deploy/README.md` has the Cloud Run job + Cloud Scheduler setup (06:00
-America/Chicago, dedicated service account, salt in Secret Manager).
+America/Chicago, dedicated service account, salt in Secret Manager). That one
+needs billing enabled; on the free setup, a cron entry running `make refresh
+report` does the same job.
 
 ## Layout
 

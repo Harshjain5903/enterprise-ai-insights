@@ -115,6 +115,8 @@ def main(argv=None):
     ap.add_argument("--narrator", choices=["gemini", "fallback"], default="gemini")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--kind", help="only run cases of this kind")
+    ap.add_argument("--delay", type=float, default=0,
+                    help="seconds between cases, the free gemini tier is rate limited (~7 works)")
     args = ap.parse_args(argv)
 
     if args.narrator == "gemini":
@@ -126,7 +128,9 @@ def main(argv=None):
 
     cases = [c for c in load_cases() if not args.kind or c["kind"] == args.kind][:args.limit]
     rows = []
-    for c in cases:
+    for i, c in enumerate(cases):
+        if i and args.delay:
+            time.sleep(args.delay)
         row = score_case(c, narrator)
         flag = "ok " if row.get("validator_ok") else "BAD"
         print(f"{flag} {row['case_id']:24} {'; '.join(row.get('violations', []))[:100]}")
