@@ -122,7 +122,7 @@ def main(argv=None):
     ap.add_argument("--narrator", choices=["gemini", "fallback"], default="gemini")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--kind", help="only run cases of this kind")
-    ap.add_argument("--resume", type=Path, help="results dir of a stopped run; skips cases it already scored")
+    ap.add_argument("--resume", help="results dir of a stopped run, or 'latest'; skips cases it already scored")
     ap.add_argument("--delay", type=float, default=0,
                     help="seconds between cases, the free gemini tier is rate limited (~7 works)")
     args = ap.parse_args(argv)
@@ -136,6 +136,13 @@ def main(argv=None):
 
     cases = [c for c in load_cases() if not args.kind or c["kind"] == args.kind][:args.limit]
     rows = []
+    if args.resume == "latest":
+        runs = sorted((HERE / "results").glob(f"*-{args.narrator}"))
+        if not runs:
+            ap.error(f"no previous {args.narrator} runs in evals/results")
+        args.resume = runs[-1]
+    elif args.resume:
+        args.resume = Path(args.resume)
     if args.resume:
         rows = [json.loads(l) for l in (args.resume / "rows.jsonl").read_text().splitlines() if l.strip()]
         rows = [r for r in rows if "api_error" not in r]  # retry the ones the api dropped
@@ -167,9 +174,9 @@ def main(argv=None):
             save()  # after every case, so a crash or ctrl-c loses nothing
     except QuotaExhausted as e:
         print(f"\ndaily gemini quota used up, stopping. continue tomorrow with:\n"
-              f"  python -m evals.run_evals --delay {args.delay:g} --resume {out}\n({e})")
+              f"  python -m evals.run_evals --delay {args.delay:g} --resume latest\n({str(e)[:160]})")
     except KeyboardInterrupt:
-        print(f"\nstopped. continue with: python -m evals.run_evals --delay {args.delay:g} --resume {out}")
+        print(f"\nstopped. continue with: python -m evals.run_evals --delay {args.delay:g} --resume latest")
 
     save()
     print(json.dumps(summarize(rows), indent=2))
