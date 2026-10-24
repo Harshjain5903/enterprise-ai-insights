@@ -13,7 +13,9 @@ SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
 
 
 INCLUDE_RE = re.compile(r"^--#include (\S+)$", re.M)
-PARTITION_RE = re.compile(r"^\s*PARTITION BY .*\n", re.M)
+# table-level clause only (always starts a line). window PARTITION BY inside
+# OVER (...) has to survive, otherwise ROW_NUMBER dedupes collapse to one row
+PARTITION_RE = re.compile(r"^PARTITION BY (?:DATE\([^)]*\)|\w+)", re.M)
 
 
 def expand_includes(text: str, depth: int = 0) -> str:

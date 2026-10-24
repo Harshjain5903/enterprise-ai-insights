@@ -94,3 +94,23 @@ def test_sandbox_refresh_end_to_end_without_dml():
     assert len(out["checks"]) == 16
     for sql in w.client.sql:
         assert not DML.search(sql), sql[:200]
+
+
+def test_sandbox_partition_strip_keeps_semicolon():
+    sql = render_sql((SQL_DIR / "00_ddl.sql").read_text(), Settings(project="p", sandbox=True))
+    statements = [s for s in sql.split(";") if s.strip()]
+    # every CREATE has to end up in its own statement
+    assert all(s.strip().count("CREATE ") == 1 for s in statements)
+
+
+def test_sandbox_partition_strip_keeps_as():
+    sql = render_sql((SQL_DIR / "40_marts.sql").read_text(), Settings(project="p", sandbox=True))
+    assert "daily_totals`\n AS\nWITH sales" in sql
+
+
+def test_sandbox_keeps_window_partition_by():
+    s = Settings(project="p", sandbox=True)
+    w = Warehouse(s, client=FakeClient())
+    for step in ("31_fact_order_item.sql", "32_fact_refund.sql"):
+        sql = render_sql(w.sql_path(step).read_text(), s)
+        assert "OVER (PARTITION BY" in sql, step
