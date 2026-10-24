@@ -97,12 +97,10 @@ def write_outputs(result: ReportResult, out_dir: Path) -> Path:
 
 
 def _log_snapshot(wh, result: ReportResult):
-    wh.query(
-        "INSERT INTO `${project}.${mart}.report_snapshot` "
-        "(report_id, week_start, status, model, prompt_hash, evidence_hash, quality_status, "
-        " violations, latency_ms, created_at) VALUES "
-        "(@report_id, @week_start, @status, @model, @prompt_hash, @evidence_hash, @quality, "
-        " IF(@violations = '', [], SPLIT(@violations, '\\n')), @latency, CURRENT_TIMESTAMP())",
+    wh.append(
+        "mart", "report_snapshot",
+        "SELECT @report_id, @week_start, @status, @model, @prompt_hash, @evidence_hash, @quality, "
+        "IF(@violations = '', ARRAY<STRING>[], SPLIT(@violations, '\\n')), @latency, CURRENT_TIMESTAMP()",
         {
             "report_id": result.packet.report_id,
             "week_start": result.packet.period.start,

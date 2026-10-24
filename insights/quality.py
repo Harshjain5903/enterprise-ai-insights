@@ -96,16 +96,16 @@ def run_checks(wh, run_id: str | None = None) -> list[CheckResult]:
         rows = wh.query(check.sql)
         results.append(CheckResult(check.name, check.severity, int(rows[0]["failures"])))
 
-    # plain DML rather than streaming inserts: the table may have been created
+    structs = ",\n".join(
+        f"STRUCT('{r.name}' AS check_name, '{r.severity}' AS severity, {r.failures} AS failures)"
+        for r in results
+    )
+    # plain SQL rather than streaming inserts: the table may have been created
     # seconds ago in 40_marts.sql and streaming into fresh tables is flaky
-    values = ",\n".join(
-        f"(@run_id, '{r.name}', '{r.severity}', {r.failures}, CURRENT_TIMESTAMP())" for r in results
-    )
-    wh.query(
-        "INSERT INTO `${project}.${mart}.dq_results` "
-        f"(run_id, check_name, severity, failures, checked_at) VALUES\n{values}",
-        {"run_id": run_id},
-    )
+    wh.append("mart", "dq_results",
+              f"SELECT @run_id, check_name, severity, failures, CURRENT_TIMESTAMP() "
+              f"FROM UNNEST([{structs}])",
+              {"run_id": run_id})
     return results
 
 
