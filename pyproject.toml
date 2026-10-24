@@ -25,3 +25,7 @@ include = ["insights*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:google.*"]
+
+[tool.setuptools.package-data]
+"insights.prompts" = ["*.txt"]
