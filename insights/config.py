@@ -14,7 +14,7 @@ class Settings:
     location: str = "global"
     dataset: str = "enterprise_ai_insights"
     bq_location: str = "US"
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.5-flash"
     tz: str = "America/Chicago"
     max_bytes_billed: int = 2_000_000_000
     temperature: float = 0.2
@@ -35,7 +35,7 @@ class Settings:
             location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
             dataset=os.getenv("BQ_DATASET", "enterprise_ai_insights"),
             bq_location=os.getenv("BQ_LOCATION", "US"),
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
             tz=os.getenv("REPORT_TZ", "America/Chicago"),
             max_bytes_billed=int(os.getenv("MAX_BYTES_BILLED", "2000000000")),
             gemini_backend=os.getenv("GEMINI_BACKEND", "studio").lower(),

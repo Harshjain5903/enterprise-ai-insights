@@ -23,7 +23,7 @@ thelook (public)  ──MERGE──>  raw  ──>  curated  ──>  mart  ─�
    AOV, refunds, a revenue decomposition (order count vs basket size), the
    4-week average, the top 3 category movers and per-channel spend. Every
    value becomes a typed fact with an id (`F_NET_SALES_CUR`, `F_CAT1_NET_CHANGE`, ...).
-3. **Narrative**: the packet goes to `gemini-2.5-flash`, through the Gemini
+3. **Narrative**: the packet goes to Gemini Flash (`gemini-3.5-flash` by default), through the Gemini
    API or Vertex AI (temperature 0.2, JSON output against a pydantic schema). Every insight has
    to list the facts it uses.
 4. **Validation**: before anything gets published, `validator.py` checks that
@@ -83,6 +83,11 @@ gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
 make full                   # first load: 365 days of history
 make report                 # report for the last complete week
 ```
+
+`gemini-2.5-flash` is no longer available to new Gemini API keys, hence the
+3.5 default. Any Flash model works via `GEMINI_MODEL`; the narrator only sends
+`thinking_budget=0` to 2.5 models and `thinking_level=low` to newer ones,
+since thinking tokens count against the output budget.
 
 Sandbox limits worth knowing: no DML, so with `BQ_SANDBOX=1` every refresh
 rebuilds the tables from TheLook instead of merging a 7 day lookback (cheap

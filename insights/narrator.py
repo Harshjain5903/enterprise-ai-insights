@@ -74,14 +74,19 @@ class GeminiNarrator:
 
     def _config(self):
         from google.genai import types
+        # thinking tokens count against max_output_tokens. with default thinking
+        # 3.x flash used up 2048 and cut the json off mid-string
+        if self.settings.model.startswith("gemini-2.5"):
+            thinking = types.ThinkingConfig(thinking_budget=0)
+        else:
+            thinking = types.ThinkingConfig(thinking_level="low")
         return types.GenerateContentConfig(
             system_instruction=self.prompt,
             temperature=self.settings.temperature,
             response_mime_type="application/json",
             response_schema=Report,
-            max_output_tokens=2048,
-            # 2.5 flash thinks by default; the token budget is better spent on output here
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            max_output_tokens=8192,
+            thinking_config=thinking,
         )
 
     def _call(self, contents: str, out: Narration):
@@ -120,6 +125,9 @@ class GeminiNarrator:
                 return out
             except (ValidationError, ValueError) as e:
                 msg = str(e).splitlines()[0][:300]
+                finish = getattr((getattr(resp, "candidates", None) or [None])[0], "finish_reason", None)
+                if finish is not None and "MAX_TOKENS" in str(finish):
+                    msg += " (hit max_output_tokens)"
                 out.errors.append(f"schema: {msg}")
                 log.warning("gemini returned invalid json (attempt %d): %s", gen, msg)
                 contents = (
