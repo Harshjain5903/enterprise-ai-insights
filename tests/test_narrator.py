@@ -91,3 +91,9 @@ def test_query_hashes_not_sent(packet):
     n, models = narrator([GOOD])
     n.generate(packet)
     assert "abc123" not in models.calls[0]
+
+
+def test_studio_backend_needs_key():
+    from insights.narrator import make_client
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        make_client(Settings(project="test", gemini_backend="studio", gemini_api_key=None))

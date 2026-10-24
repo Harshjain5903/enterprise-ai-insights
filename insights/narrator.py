@@ -46,6 +46,19 @@ def _status_code(exc) -> int | None:
     return getattr(exc, "code", None) or getattr(exc, "status_code", None)
 
 
+def make_client(settings: Settings, timeout_s: int = 30):
+    from google import genai
+    from google.genai import types
+
+    http = types.HttpOptions(timeout=timeout_s * 1000)
+    if settings.gemini_backend == "vertex":
+        return genai.Client(vertexai=True, project=settings.project, location=settings.location,
+                            http_options=http)
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set (get one at https://aistudio.google.com/apikey)")
+    return genai.Client(api_key=settings.gemini_api_key, http_options=http)
+
+
 class GeminiNarrator:
     def __init__(self, settings: Settings, client=None, sleep=time.sleep,
                  max_generations: int = 2, max_retries: int = 3, timeout_s: int = 30):
@@ -56,12 +69,7 @@ class GeminiNarrator:
         self.max_retries = max_retries
         self._sleep = sleep
         if client is None:
-            from google import genai
-            from google.genai import types
-            client = genai.Client(
-                vertexai=True, project=settings.project, location=settings.location,
-                http_options=types.HttpOptions(timeout=timeout_s * 1000),
-            )
+            client = make_client(settings, timeout_s)
         self.client = client
 
     def _config(self):
