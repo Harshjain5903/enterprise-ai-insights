@@ -20,13 +20,13 @@ WITH returned AS (
 events AS (
   SELECT order_item_id, 1 AS seq, returned_at, h,
     CASE
-      WHEN h < 60 THEN ROUND(sale_price * 0.5, 2)
-      WHEN h < 200 THEN ROUND(sale_price * (0.6 + MOD(h, 30) / 100), 2)
+      WHEN h < 60 THEN ROUND(sale_price * NUMERIC '0.5', 2)
+      WHEN h < 200 THEN ROUND(sale_price * (NUMERIC '0.6' + CAST(MOD(h, 30) AS NUMERIC) / 100), 2)
       ELSE sale_price
     END AS amount
   FROM returned
   UNION ALL
-  SELECT order_item_id, 2 AS seq, returned_at, h, sale_price - ROUND(sale_price * 0.5, 2)
+  SELECT order_item_id, 2 AS seq, returned_at, h, sale_price - ROUND(sale_price * NUMERIC '0.5', 2)
   FROM returned
   WHERE h < 60
 ),
@@ -39,7 +39,8 @@ SELECT
   CONCAT('RF-', CAST(order_item_id AS STRING), '-', CAST(seq AS STRING)) AS refund_id,
   order_item_id,
   refund_ts,
-  amount AS refund_amount,
+  -- keep money NUMERIC: a float literal anywhere above turns this into FLOAT64
+  CAST(amount AS NUMERIC) AS refund_amount,
   'USD' AS currency,
   CASE
     WHEN h >= 970 THEN 'rejected'
