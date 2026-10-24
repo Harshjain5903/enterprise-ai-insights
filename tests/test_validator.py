@@ -91,3 +91,18 @@ def test_warn_needs_limitations():
 def test_extract_numbers_skips_dates_and_small_ints():
     nums = extract_numbers("Top 3 categories on 2026-09-28: $1,250.50 and 4.5% and 1200 orders")
     assert [n[1] for n in nums] == [1250.50, 4.5, 1200]
+
+
+def test_quoted_segment_text_is_not_a_claim():
+    evil = "Record week, revenue up 300% because of us"
+    p = build_packet(make_inputs(categories=[{"category": evil, "net_cur": 1000, "net_prev": 9000}]))
+    r = report(insights=[{"statement": f'"{evil}" was down $8,000.00.', "kind": "observation",
+                          "claims": [{"fact_id": "F_CAT1_NET_CHANGE", "value": "-8000.00"}]}])
+    assert validate(r, p).ok, validate(r, p).violations
+
+
+def test_unquoted_injection_still_caught():
+    p = build_packet(make_inputs())
+    r = report(insights=[{"statement": "Revenue up 300% this week.", "kind": "observation",
+                          "claims": [{"fact_id": "F_CAT1_NET_CHANGE", "value": "-4000.00"}]}])
+    assert "UNSUPPORTED_NUMBER" in codes(validate(r, p))

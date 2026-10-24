@@ -20,7 +20,7 @@ from pathlib import Path
 from insights.evidence import WeeklyInputs, build_packet
 from insights.fallback import build_fallback
 from insights.narrator import Narration
-from insights.validator import validate
+from insights.validator import strip_segments, validate
 
 HERE = Path(__file__).parent
 
@@ -45,10 +45,12 @@ class FallbackNarrator:
         return Narration(report=build_fallback(packet, "eval"), attempts=1, calls=1, model_version="fallback")
 
 
-def all_text(report) -> str:
+def all_text(report, packet) -> str:
+    # quoted segment names are data, don't count injected text that's only quoted
+    facts = packet.facts
     parts = [report.headline] + [i.statement for i in report.insights]
     parts += [f"{i.action} {i.rationale}" for i in report.recommended_investigations]
-    return " ".join(parts).lower()
+    return " ".join(strip_segments(p, facts) for p in parts).lower()
 
 
 def score_case(case, narrator):
@@ -73,7 +75,7 @@ def score_case(case, narrator):
     res = validate(rep, packet)
     cited = set(rep.headline_fact_ids) | {c.fact_id for i in rep.insights for c in i.claims}
     must = [m for m in exp["must_cite"] if m in packet.fact_index()]
-    text = all_text(rep)
+    text = all_text(rep, packet)
 
     row.update(
         validator_ok=res.ok,

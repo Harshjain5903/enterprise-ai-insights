@@ -83,7 +83,17 @@ def matches(num: Decimal, decimals: int, is_pct: bool, fact: Fact) -> bool:
     return abs(num) == abs(fv).quantize(q, rounding=ROUND_HALF_UP)
 
 
+def strip_segments(text: str, facts: list[Fact]) -> str:
+    """Remove quoted category/channel names. They're source data, so whatever
+    is inside them (numbers, instructions) isn't a claim by the writer."""
+    for f in facts:
+        if f.segment != "all":
+            text = text.replace(f'"{f.segment}"', '""')
+    return text
+
+
 def _check_text(text, facts: list[Fact], where, res: Result):
+    text = strip_segments(text, facts)
     for raw, val, dec, pct in extract_numbers(text):
         res.numbers_checked += 1
         if any(matches(val, dec, pct, f) for f in facts):
@@ -94,6 +104,7 @@ def _check_text(text, facts: list[Fact], where, res: Result):
 
 
 def _check_direction(text, facts: list[Fact], where, res: Result):
+    text = strip_segments(text, facts)
     changes = [_dec(f.value) for f in facts if f.period == "change"]
     changes = [c for c in changes if c is not None and c != 0]
     if not changes:
@@ -154,7 +165,7 @@ def validate(report: Report, packet: Packet) -> Result:
 
         _check_text(ins.statement, facts, where, res)
         _check_direction(ins.statement, facts, where, res)
-        m = CAUSAL_RE.search(ins.statement)
+        m = CAUSAL_RE.search(strip_segments(ins.statement, facts))
         if m:
             res.add("CAUSAL_CLAIM", where, m.group(0))
 

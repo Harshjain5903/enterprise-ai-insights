@@ -57,7 +57,7 @@ def build_fallback(packet: Packet, reason: str) -> Report:
     if "F_CAT1_NET_CHANGE" in idx:
         c = idx["F_CAT1_NET_CHANGE"]
         insights.append(Insight(
-            statement=f"Largest category move: {c.segment}, {_dir(c.value)} {_usd(c.value)}.",
+            statement=f'Largest category move: "{c.segment}", {_dir(c.value)} {_usd(c.value)}.',
             kind="observation", claims=claim("F_CAT1_NET_CHANGE")))
 
     if not insights:
