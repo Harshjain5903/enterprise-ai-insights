@@ -19,7 +19,7 @@ from pathlib import Path
 
 from insights.evidence import WeeklyInputs, build_packet
 from insights.fallback import build_fallback
-from insights.narrator import Narration
+from insights.narrator import Narration, QuotaExhausted
 from insights.validator import strip_segments, validate
 
 HERE = Path(__file__).parent
@@ -61,8 +61,12 @@ def score_case(case, narrator):
     t = time.monotonic()
     try:
         n = narrator.generate(packet)
+    except QuotaExhausted:
+        raise
     except Exception as e:  # noqa: BLE001
-        row.update(error=f"{type(e).__name__}: {e}"[:200], schema_valid=False)
+        # api/network failure, not something the model got wrong. kept out of
+        # the quality denominators and reported as api_errors instead
+        row.update(api_error=f"{type(e).__name__}: {e}"[:200])
         return row
     row["latency_ms"] = int((time.monotonic() - t) * 1000)
     row["attempts"] = n.attempts
@@ -92,6 +96,8 @@ def score_case(case, narrator):
 
 
 def summarize(rows):
+    api_errors = sum("api_error" in r for r in rows)
+    rows = [r for r in rows if "api_error" not in r]
     n = len(rows)
     valid = [r for r in rows if r.get("schema_valid")]
     checked = sum(r.get("numbers_checked", 0) for r in valid)
@@ -99,6 +105,7 @@ def summarize(rows):
     lat = [r["latency_ms"] for r in rows if "latency_ms" in r]
     return {
         "cases": n,
+        "api_errors": api_errors,
         "schema_valid": f"{len(valid)}/{n}",
         "validator_pass": f"{sum(r.get('validator_ok', False) for r in valid)}/{n}",
         "numeric_correct": f"{ok}/{checked}",
@@ -115,6 +122,7 @@ def main(argv=None):
     ap.add_argument("--narrator", choices=["gemini", "fallback"], default="gemini")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--kind", help="only run cases of this kind")
+    ap.add_argument("--resume", type=Path, help="results dir of a stopped run; skips cases it already scored")
     ap.add_argument("--delay", type=float, default=0,
                     help="seconds between cases, the free gemini tier is rate limited (~7 works)")
     args = ap.parse_args(argv)
@@ -122,27 +130,49 @@ def main(argv=None):
     if args.narrator == "gemini":
         from insights.config import Settings
         from insights.narrator import GeminiNarrator
-        narrator = GeminiNarrator(Settings.from_env())
+        narrator = GeminiNarrator(Settings.from_env(), max_retries=5)
     else:
         narrator = FallbackNarrator()
 
     cases = [c for c in load_cases() if not args.kind or c["kind"] == args.kind][:args.limit]
     rows = []
-    for i, c in enumerate(cases):
-        if i and args.delay:
-            time.sleep(args.delay)
-        row = score_case(c, narrator)
-        flag = "ok " if row.get("validator_ok") else "BAD"
-        print(f"{flag} {row['case_id']:24} {'; '.join(row.get('violations', []))[:100]}")
-        rows.append(row)
+    if args.resume:
+        rows = [json.loads(l) for l in (args.resume / "rows.jsonl").read_text().splitlines() if l.strip()]
+        rows = [r for r in rows if "api_error" not in r]  # retry the ones the api dropped
+        done = {r["case_id"] for r in rows}
+        cases = [c for c in cases if c["case_id"] not in done]
+        print(f"resuming: {len(done)} done, {len(cases)} to go")
 
-    summary = summarize(rows)
-    out = HERE / "results" / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{args.narrator}"
+    out = args.resume or HERE / "results" / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{args.narrator}"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "rows.jsonl").write_text("".join(json.dumps(r, default=str) + "\n" for r in rows))
-    (out / "summary.json").write_text(json.dumps(
-        {"narrator": args.narrator, "prompt_hash": narrator.prompt_hash, **summary}, indent=2))
-    print(json.dumps(summary, indent=2))
+
+    def save():
+        (out / "rows.jsonl").write_text("".join(json.dumps(r, default=str) + "\n" for r in rows))
+        (out / "summary.json").write_text(json.dumps(
+            {"narrator": args.narrator, "model": getattr(getattr(narrator, "settings", None), "model", None),
+             "prompt_hash": narrator.prompt_hash, **summarize(rows)}, indent=2))
+
+    try:
+        for i, c in enumerate(cases):
+            if i and args.delay:
+                time.sleep(args.delay)
+            row = score_case(c, narrator)
+            if "api_error" in row:
+                flag = "API"
+            else:
+                flag = "ok " if row.get("validator_ok") else "BAD"
+            detail = row.get("api_error") or "; ".join(row.get("violations", []) or row.get("errors", []))
+            print(f"{flag} {row['case_id']:24} {detail[:100]}")
+            rows.append(row)
+            save()  # after every case, so a crash or ctrl-c loses nothing
+    except QuotaExhausted as e:
+        print(f"\ndaily gemini quota used up, stopping. continue tomorrow with:\n"
+              f"  python -m evals.run_evals --delay {args.delay:g} --resume {out}\n({e})")
+    except KeyboardInterrupt:
+        print(f"\nstopped. continue with: python -m evals.run_evals --delay {args.delay:g} --resume {out}")
+
+    save()
+    print(json.dumps(summarize(rows), indent=2))
     print(f"results in {out}")
 
 

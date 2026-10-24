@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from importlib import resources
@@ -38,8 +39,16 @@ class Narration:
     errors: list[str] = field(default_factory=list)
 
 
-class TransientError(Exception):
-    pass
+class QuotaExhausted(Exception):
+    """Daily free-tier quota is used up. Retrying won't help until it resets."""
+
+
+RETRY_DELAY_RE = re.compile(r"retry(?:Delay)?['\"]?\s*(?:in|:)?\s*['\"]?([\d.]+)s", re.I)
+
+
+def _retry_after(exc) -> float | None:
+    m = RETRY_DELAY_RE.search(str(exc))
+    return float(m.group(1)) if m else None
 
 
 def _status_code(exc) -> int | None:
@@ -99,9 +108,14 @@ class GeminiNarrator:
             except Exception as e:  # noqa: BLE001 - sdk raises a few different types
                 code = _status_code(e)
                 transient = code in RETRYABLE or isinstance(e, TimeoutError) or "timeout" in type(e).__name__.lower()
+                if code == 429 and re.search(r"per ?day", str(e), re.I):
+                    raise QuotaExhausted(str(e)[:300]) from e
                 if not transient or attempt == self.max_retries:
                     raise
                 wait = delay + random.uniform(0, delay / 2)
+                if code == 429:
+                    # rate limited: the api says how long to back off, 1-4s is far too short
+                    wait = min(max(_retry_after(e) or 15.0, wait), 90.0)
                 log.warning("gemini call failed (%s), retrying in %.1fs", code or type(e).__name__, wait)
                 self._sleep(wait)
                 delay *= 2

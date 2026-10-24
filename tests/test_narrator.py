@@ -97,3 +97,25 @@ def test_studio_backend_needs_key():
     from insights.narrator import make_client
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         make_client(Settings(project="test", gemini_backend="studio", gemini_api_key=None))
+
+
+def test_429_waits_for_retry_delay(packet):
+    slept = []
+    client = SimpleNamespace(models=FakeModels([ApiError(429), GOOD]))
+    n = GeminiNarrator(Settings(project="test"), client=client, sleep=slept.append)
+    n.client.models.script[0].args = ("429 RESOURCE_EXHAUSTED 'retryDelay': '37s'",)
+    n.generate(packet)
+    assert 37 <= slept[0] <= 90
+
+
+def test_daily_quota_stops_immediately(packet):
+    from insights.narrator import QuotaExhausted
+
+    class DailyQuota(ApiError):
+        def __str__(self):
+            return "429 quota exceeded: GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+
+    n, models = narrator([DailyQuota(429), GOOD])
+    with pytest.raises(QuotaExhausted):
+        n.generate(packet)
+    assert len(models.calls) == 1
